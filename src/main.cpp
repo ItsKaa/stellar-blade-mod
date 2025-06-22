@@ -29,6 +29,11 @@ int screen_percentage_photos = 200;
 bool is_game_paused = false;
 bool restore_screen_percentage_on_unfreeze = false;
 
+int key_percentage_photos = VK_F5;
+int key_percentage_default = VK_F6;
+int key_percentage_low_quality = VK_F7;
+
+
 void LogAllValues(const char* title, const safetyhook::Context& ctx)
 {
     spdlog::debug(
@@ -190,6 +195,9 @@ void InitConfig()
         inipp::get_value(ini.sections["PhotoMode HUD Detection"], "Enabled",  enable_hud_detection);
         inipp::get_value(ini.sections["Pause Detection"], "Enabled",  enable_pause_detection);
         inipp::get_value(ini.sections["Pause Detection"], "RestoreScreenPercentage",  restore_screen_percentage_on_unfreeze);
+        inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Default",  key_percentage_default);
+        inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Photos",  key_percentage_photos);
+        inipp::get_value(ini.sections["Keys"], "ScreenPercentage_LowQuality",  key_percentage_low_quality);
 
         spdlog::info("Loaded configuration file");
         spdlog::info("Screen Percentage, Default: {}", screen_percentage_default);
@@ -197,6 +205,9 @@ void InitConfig()
         spdlog::info("Screen Percentage, Delay: {}", screen_percentage_update_delay);
         spdlog::info("HUD Detection: {}", enable_hud_detection);
         spdlog::info("Pause Detection: {}", enable_pause_detection);
+        spdlog::info("Key: ScreenPercentage Default: {}", key_percentage_default);
+        spdlog::info("Key: ScreenPercentage Photos: {}", key_percentage_photos);
+        spdlog::info("Key: ScreenPercentage Low Quality: {}", key_percentage_low_quality);
     }
     else
     {
@@ -243,6 +254,7 @@ DWORD WINAPI Main(void*)
 
 DWORD WINAPI HandleScreenPercentageUpdates(void*)
 {
+    bool shift = false, ctrl = false, alt = false;
     using namespace std::literals::chrono_literals;
     while (true)
     {
@@ -258,6 +270,33 @@ DWORD WINAPI HandleScreenPercentageUpdates(void*)
         if (value > 0)
         {
             WriteScreenPercentageFixLag(screen_percentage_address, value, value <= screen_percentage_default ? screen_percentage_update_delay : 0);
+        }
+
+        // Handle key inputs in here as well for now, since they're all related to screen percentage.
+        shift = GetAsyncKeyState(VK_SHIFT) & 0x8000 ? true : false;
+        ctrl = GetAsyncKeyState(VK_CONTROL) & 0x8000 ? true : false;
+        alt = GetAsyncKeyState(VK_MENU) & 0x8000 ? true : false;
+
+        if (!shift && !ctrl && !alt)
+        {
+            if (::GetAsyncKeyState(key_percentage_photos) & 0x8000)
+            {
+                spdlog::info("Key pressed, updating screen percentage to photo mode: {:d}", screen_percentage_photos);
+                WriteScreenPercentage(screen_percentage_address, screen_percentage_photos);
+                Sleep(200);
+            }
+            else if (::GetAsyncKeyState(key_percentage_default) & 0x8000)
+            {
+                spdlog::info("Key pressed, updating screen percentage to default: {:d}", screen_percentage_photos);
+                WriteScreenPercentageFixLag(screen_percentage_address, screen_percentage_default, screen_percentage_update_delay);
+                Sleep(200);
+            }
+            else if (::GetAsyncKeyState(key_percentage_low_quality) & 0x8000)
+            {
+                spdlog::info("Key pressed, updating screen percentage to low quality: {:d}", screen_percentage_photos);
+                WriteScreenPercentage(screen_percentage_address, 32);
+                Sleep(200);
+            }
         }
         std::this_thread::sleep_for(100ms);
     }
