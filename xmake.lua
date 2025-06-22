@@ -19,6 +19,8 @@ target("stellar-blade-mod")
     add_packages("inipp")
     add_packages("fmt")
     add_packages("zydis")
+    add_syslinks("user32")
+
 
 if is_plat("windows") then
     set_extension(".asi")

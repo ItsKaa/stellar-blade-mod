@@ -122,52 +122,7 @@ DWORD WINAPI Main(void*)
     }
     else
     {
-        const auto screen_percentage_bytes_1 = ReadScreenPercentageBytes(screen_percentage_address, true);
-        const auto screen_percentage_bytes_2 = ReadScreenPercentageBytes(screen_percentage_address, false);
-        if (!screen_percentage_bytes_1.has_value() || !screen_percentage_bytes_2.has_value())
-        {
-            spdlog::error("Unable to read the screen percentage. Disabled the screen percentage functionality.");
-            screen_percentage_address = nullptr;
-        }
-        else
-        {
-            const auto first_byte_1 = std::get<0>(screen_percentage_bytes_1.value());
-            const auto second_byte_1 = std::get<1>(screen_percentage_bytes_1.value());
-            const auto third_byte_1 = std::get<2>(screen_percentage_bytes_1.value());
-
-            const auto first_byte_2 = std::get<0>(screen_percentage_bytes_2.value());
-            const auto second_byte_2 = std::get<1>(screen_percentage_bytes_2.value());
-            const auto third_byte_2 = std::get<2>(screen_percentage_bytes_2.value());
-
-            spdlog::debug("Initial ScreenPercentage bytes (1): {:X} {:X} {:X}", first_byte_1, second_byte_1, third_byte_1);
-            spdlog::debug("Initial ScreenPercentage bytes (2): {:X} {:X} {:X}", first_byte_2, second_byte_2, third_byte_2);
-
-            if (first_byte_1 == 0x00 && second_byte_1 == 0xC8 && third_byte_1 == 0x42
-                && first_byte_2 == 0x00 && second_byte_2 == 0xC8 && third_byte_2 == 0x42
-            )
-            {
-                spdlog::info("ScreenPercentage is the expected value (100)");
-            }
-            else
-            {
-                if (first_byte_1 != 0x00 || second_byte_1 != 0xC8 || third_byte_1 != 0x42)
-                {
-                    spdlog::warn("Screen percentage is not the expected value of 100, the pointer (1) may be incorrect and could lead to crashes.");
-                }
-                if (first_byte_2 != 0x00 || second_byte_2 != 0xC8 || third_byte_2 != 0x42)
-                {
-                    spdlog::warn("Screen percentage is not the expected value of 100, the pointer (2) may be incorrect and could lead to crashes.");
-                }
-                if (first_byte_1 != first_byte_2 || second_byte_1 != second_byte_2 || third_byte_1 != third_byte_2)
-                {
-                    spdlog::error("Unexpected values encountered for screen percentage. {:X} {:X} {:X} != {:X} {:X} {:X}. Disabled the screen percentage functionality.",
-                        first_byte_1, second_byte_1, third_byte_1,
-                        first_byte_2, second_byte_2, third_byte_2
-                    );
-                    screen_percentage_address = nullptr;
-                }
-            }
-        }
+        ValidateScreenPercentage(screen_percentage_address);
     }
 
     spdlog::debug("Init done");
