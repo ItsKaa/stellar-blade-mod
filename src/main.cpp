@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "pattern.h"
 #include <string>
 #include <fstream>
 #include <spdlog/spdlog.h>
