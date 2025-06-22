@@ -4,12 +4,103 @@
 #include <fstream>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include <safetyhook.hpp>
 
 std::string dll_name = "PhotoModePatches";
 
 HMODULE this_module;
 HMODULE exe_module = GetModuleHandle(NULL);
 std::filesystem::path module_path;
+
+void LogAllValues(const char* title, const safetyhook::Context& ctx)
+{
+    spdlog::debug(
+        "{:s}, values: {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}, {:d}"
+        , title
+        , ctx.rax, ctx.rbx, ctx.rcx, ctx.rdx, ctx.rsi, ctx.rdi, ctx.rbp
+        , ctx.rsp, ctx.r8, ctx.r9, ctx.r10, ctx.r11, ctx.r12, ctx.r13, ctx.r14, ctx.r15, ctx.rip
+    );
+}
+
+void HookTemporalAASamples()
+{
+    if (std::uint8_t* result = PatternScan(exe_module, "8B ?? 18 ?? 8B ?? ?? 8B ?? 10 89 ?? 48 ?? ??"))
+    {
+        spdlog::info("Found address for TemporalAASamples: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+
+        static SafetyHookMid midHook{};
+        midHook = safetyhook::create_mid(result + 0x0A, [](safetyhook::Context& ctx) {
+            if (ctx.rax == 2)
+            {
+                spdlog::info("Found TemporalAASamples value of {:d}", ctx.rax);
+                LogAllValues("TemporalAASamples", ctx);
+            }
+        });
+    } else
+    {
+        spdlog::error("Failed to find address for TemporalAASamples!");
+    }
+}
+
+void UpdateScreenPercentage()
+{
+    if (std::uint8_t* result = PatternScanHeap("00 00 ?? ?? ?? 00 ?? ?? ?? 68 53 FA 45 01 00 00 00 ?? 5B"))
+    {
+        spdlog::info("Found address for ScreenPercentage: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        spdlog::info("ScreenPercentage values {:X} {:X} {:X} + {:X} {:X} {:X}",
+            *(result+0x02), *(result+0x03), *(result+0x04),
+            *(result+0x06), *(result+0x07), *(result+0x08)
+        );
+    }
+    else
+    {
+        spdlog::error("Failed to find address for ScreenPercentage!");
+    }
+}
+
+void HookGameFreeze()
+{
+    if (std::uint8_t* result = PatternScan(exe_module, "89 86 60 03 00 00 ?? ?? 64 03 00 00 ?? ?? 48 ?? ?? 58 03 00 00"))
+    {
+        spdlog::info("Found address for game freeze: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        static SafetyHookMid midHook;
+        midHook = safetyhook::create_mid(result, [](safetyhook::Context& ctx) {
+            LogAllValues("game freeze", ctx);
+
+            if (ctx.rax == 1
+                && ctx.r12 == 1 && ctx.r15 == 1)
+            {
+                spdlog::info("Detected game freeze.");
+            }
+        });
+    } else
+    {
+        spdlog::error("Failed to find address for game freeze!");
+    }
+}
+
+void HookGameUnfreeze()
+{
+    if (std::uint8_t* result = PatternScan(exe_module, "44 29 76 08 48 83 C4 28 41 5E 5E C3"))
+    {
+        spdlog::info("Found address for game unfreeze: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        static SafetyHookMid midHook{};
+        midHook = safetyhook::create_mid(result, [](safetyhook::Context& ctx) {
+            LogAllValues("game unfreeze", ctx);
+
+            if (ctx.rax == 1
+                && ctx.rdx == 1 && ctx.r14 == 1 && ctx.r15 == 1
+                && ctx.rcx == 0 && ctx.rdi == 0 && ctx.r13 == 0)
+            {
+                spdlog::info("Detected game unfreeze.");
+            }
+        });
+    }
+    else
+    {
+        spdlog::error("Failed to find the address for game unfreeze!");
+    }
+}
 
 void InitLogging()
 {
@@ -31,6 +122,15 @@ DWORD WINAPI Main(void*)
 {
     InitLogging();
     spdlog::info("=== Patch Initialized ===");
+    spdlog::info("Module Path: {:s}", module_path.string());
+    spdlog::info("Module Address: 0x{:X}", reinterpret_cast<uintptr_t>(exe_module));
+
+    HookTemporalAASamples();
+    HookGameFreeze();
+    HookGameUnfreeze();
+
+    // test
+    UpdateScreenPercentage();
 
     return 1;
 }
