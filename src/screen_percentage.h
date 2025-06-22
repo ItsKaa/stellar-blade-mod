@@ -75,11 +75,10 @@ static std::string ScreenPercentageBytesToPattern(const std::tuple<std::uint8_t,
 
 static std::uint8_t* FindScreenPercentageAddress()
 {
-	//if (std::uint8_t* result = PatternScanHeap("00 00 ?? ?? ?? 00 ?? ?? ?? 68 53 FA 45 01 00 00 00 ?? 5B"))
     if (std::uint8_t* result = PatternScanHeap("00 00 00 ?? ?? ?? 00 ?? ?? ?? 68 53 FA 45 01 00 00 ?? ?? 5B"))
     {
         spdlog::info("Found address for ScreenPercentage: 0x{:X}", reinterpret_cast<uintptr_t>(result));
-        spdlog::info("ScreenPercentage values {:X} {:X} {:X} + {:X} {:X} {:X}",
+        spdlog::debug("ScreenPercentage values {:X} {:X} {:X} + {:X} {:X} {:X}",
             *(result+0x03), *(result+0x04), *(result+0x05),
             *(result+0x07), *(result+0x08), *(result+0x09)
         );

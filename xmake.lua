@@ -10,7 +10,7 @@ add_requires("vcpkg::inipp",      {alias = "inipp", configs = { features = {"wch
 add_requires("vcpkg::fmt",        {alias = "fmt"})
 add_requires("vcpkg::zydis",      {alias = "zydis"})
 
-target("stellar-blade-mod")
+target("PhotoModePatches")
     set_kind("shared")
     set_prefixname("")
     add_files("src/*.cpp")

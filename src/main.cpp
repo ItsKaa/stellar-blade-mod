@@ -27,7 +27,7 @@ int screen_percentage_update_delay = 2000;
 int screen_percentage_default = 100;
 int screen_percentage_photos = 200;
 bool is_game_paused = false;
-bool restore_screen_percentage_on_unfreeze = false;
+bool restore_screen_percentage_on_unpause = false;
 
 int key_percentage_photos = VK_F5;
 int key_percentage_default = VK_F6;
@@ -64,44 +64,44 @@ void HookTemporalAASamples()
     }
 }
 
-void HookGameFreeze()
+void HookGamePause()
 {
     if (std::uint8_t* result = PatternScan(exe_module, "89 86 60 03 00 00 ?? ?? 64 03 00 00 ?? ?? 48 ?? ?? 58 03 00 00"))
     {
-        spdlog::info("Found address for game freeze: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        spdlog::info("Found address for game pause: 0x{:X}", reinterpret_cast<uintptr_t>(result));
         static SafetyHookMid midHook;
         midHook = safetyhook::create_mid(result, [](safetyhook::Context& ctx) {
-            LogAllValues("game freeze", ctx);
+            LogAllValues("game pause", ctx);
 
             if (ctx.rax == 1
                 && ctx.r12 == 1 && ctx.r15 == 1)
             {
-                spdlog::debug("Detected game freeze.");
+                spdlog::debug("Detected game pause.");
                 is_game_paused = true;
             }
         });
     } else
     {
-        spdlog::error("Failed to find address for game freeze!");
+        spdlog::error("Failed to find address for game pause!");
     }
 }
 
-void HookGameUnfreeze()
+void HookGameUnpause()
 {
     if (std::uint8_t* result = PatternScan(exe_module, "44 29 76 08 48 83 C4 28 41 5E 5E C3"))
     {
-        spdlog::info("Found address for game unfreeze: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        spdlog::info("Found address for game unpause: 0x{:X}", reinterpret_cast<uintptr_t>(result));
         static SafetyHookMid midHook{};
         midHook = safetyhook::create_mid(result, [](safetyhook::Context& ctx) {
-            LogAllValues("game unfreeze", ctx);
+            LogAllValues("game unpause", ctx);
 
             if (ctx.rax == 1
                 && ctx.rdx == 1 && ctx.r14 == 1 && ctx.r15 == 1
                 && ctx.rcx == 0 && ctx.rdi == 0 && ctx.r13 == 0)
             {
-                spdlog::debug("Detected game unfreeze.");
+                spdlog::debug("Detected game unpause.");
                 is_game_paused = false;
-                if (restore_screen_percentage_on_unfreeze)
+                if (restore_screen_percentage_on_unpause)
                 {
                     spdlog::info("Game unpaused, resetting screen percentage value to {:d}", screen_percentage_default);
                     queue_screen_percentage_updates.push(screen_percentage_default);
@@ -111,7 +111,7 @@ void HookGameUnfreeze()
     }
     else
     {
-        spdlog::error("Failed to find the address for game unfreeze!");
+        spdlog::error("Failed to find the address for game unpause!");
     }
 }
 
@@ -194,7 +194,7 @@ void InitConfig()
         inipp::get_value(ini.sections["Screen Percentage"], "Delay",  screen_percentage_update_delay);
         inipp::get_value(ini.sections["PhotoMode HUD Detection"], "Enabled",  enable_hud_detection);
         inipp::get_value(ini.sections["Pause Detection"], "Enabled",  enable_pause_detection);
-        inipp::get_value(ini.sections["Pause Detection"], "RestoreScreenPercentage",  restore_screen_percentage_on_unfreeze);
+        inipp::get_value(ini.sections["Pause Detection"], "RestoreScreenPercentage",  restore_screen_percentage_on_unpause);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Default",  key_percentage_default);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Photos",  key_percentage_photos);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_LowQuality",  key_percentage_low_quality);
@@ -228,8 +228,8 @@ DWORD WINAPI Main(void*)
     if (enable_pause_detection)
     {
         spdlog::debug("Enabling Pause Detection");
-        HookGameFreeze();
-        HookGameUnfreeze();
+        HookGamePause();
+        HookGameUnpause();
     }
 
     if (enable_hud_detection)
