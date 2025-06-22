@@ -27,7 +27,6 @@ int screen_percentage_update_delay = 2000;
 int screen_percentage_default = 100;
 int screen_percentage_photos = 200;
 bool is_game_paused = false;
-bool restore_screen_percentage_on_unpause = false;
 
 int key_percentage_photos = VK_F5;
 int key_percentage_default = VK_F6;
@@ -101,7 +100,7 @@ void HookGameUnpause()
             {
                 spdlog::debug("Detected game unpause.");
                 is_game_paused = false;
-                if (restore_screen_percentage_on_unpause)
+                if (enable_pause_detection)
                 {
                     spdlog::info("Game unpaused, resetting screen percentage value to {:d}", screen_percentage_default);
                     queue_screen_percentage_updates.push(screen_percentage_default);
@@ -127,11 +126,12 @@ void HookPhotoModeHUDVisibility()
                 spdlog::debug("Found HUD toggle {:s}", hud_visible ? "true" : "false");
                 LogAllValues("HUD Visibility", ctx);
 
-                if (enable_pause_detection && !is_game_paused)
-                {
-                    spdlog::warn("Detected HUD toggle but game is not paused. Aborting.");
-                    return;
-                }
+                // Selfie mode does not pause the game.
+                // if (enable_pause_detection && !is_game_paused)
+                // {
+                //     spdlog::debug("Detected HUD toggle but game is not paused.. Aborting");
+                //     return;
+                // }
 
                 std::unique_lock lock(queue_mutex);
                 if (hud_visible)
@@ -194,7 +194,6 @@ void InitConfig()
         inipp::get_value(ini.sections["Screen Percentage"], "Delay",  screen_percentage_update_delay);
         inipp::get_value(ini.sections["PhotoMode HUD Detection"], "Enabled",  enable_hud_detection);
         inipp::get_value(ini.sections["Pause Detection"], "Enabled",  enable_pause_detection);
-        inipp::get_value(ini.sections["Pause Detection"], "RestoreScreenPercentage",  restore_screen_percentage_on_unpause);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Default",  key_percentage_default);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Photos",  key_percentage_photos);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_LowQuality",  key_percentage_low_quality);
