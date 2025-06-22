@@ -128,7 +128,7 @@ static bool WriteScreenPercentage(std::uint8_t* screen_percentage_address, const
         return false;
     }
 
-    spdlog::info("Going to write {:X} {:X} {:X} {:X} {:X} {:X} {:X} to {:X}",
+    spdlog::debug("Going to write {:X} {:X} {:X} {:X} {:X} {:X} {:X} to {:X}",
                  first_byte, second_byte, third_byte,
                  *(screen_percentage_address + 0x03),
                  first_byte, second_byte, third_byte,
@@ -190,7 +190,7 @@ static void ValidateScreenPercentage(const std::uint8_t* screen_percentage_addre
             && first_byte_2 == 0x00 && second_byte_2 == 0xC8 && third_byte_2 == 0x42
         )
         {
-            spdlog::info("ScreenPercentage is the expected value (100)");
+            spdlog::info("ScreenPercentage value is correct (100)");
         }
         else
         {

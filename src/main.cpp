@@ -1,12 +1,14 @@
+#include <fstream>
+
 #include "stdafx.h"
 #include "pattern.h"
 #include "screen_percentage.h"
 #include <string>
-#include <fstream>
 #include <queue>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <safetyhook.hpp>
+#include <inipp.h>
 
 std::string dll_name = "PhotoModePatches";
 
@@ -17,6 +19,10 @@ std::uint8_t* screen_percentage_address = nullptr;
 
 std::queue<int> queue_screen_percentage_updates;
 std::mutex queue_mutex;
+
+bool enable_hud_detection = true;
+bool enable_pause_detection = true;
+
 int screen_percentage_update_delay = 2000;
 int screen_percentage_default = 100;
 int screen_percentage_photos = 200;
@@ -43,7 +49,7 @@ void HookTemporalAASamples()
         midHook = safetyhook::create_mid(result + 0x0A, [](safetyhook::Context& ctx) {
             if (ctx.rax == 2)
             {
-                spdlog::info("Found TemporalAASamples value of {:d}", ctx.rax);
+                spdlog::debug("Found TemporalAASamples value of {:d}", ctx.rax);
                 LogAllValues("TemporalAASamples", ctx);
             }
         });
@@ -65,7 +71,7 @@ void HookGameFreeze()
             if (ctx.rax == 1
                 && ctx.r12 == 1 && ctx.r15 == 1)
             {
-                spdlog::info("Detected game freeze.");
+                spdlog::debug("Detected game freeze.");
                 is_game_paused = true;
             }
         });
@@ -88,10 +94,11 @@ void HookGameUnfreeze()
                 && ctx.rdx == 1 && ctx.r14 == 1 && ctx.r15 == 1
                 && ctx.rcx == 0 && ctx.rdi == 0 && ctx.r13 == 0)
             {
-                spdlog::info("Detected game unfreeze.");
+                spdlog::debug("Detected game unfreeze.");
                 is_game_paused = false;
                 if (restore_screen_percentage_on_unfreeze)
                 {
+                    spdlog::info("Game unpaused, resetting screen percentage value to {:d}", screen_percentage_default);
                     queue_screen_percentage_updates.push(screen_percentage_default);
                 }
             }
@@ -115,7 +122,7 @@ void HookPhotoModeHUDVisibility()
                 spdlog::debug("Found HUD toggle {:s}", hud_visible ? "true" : "false");
                 LogAllValues("HUD Visibility", ctx);
 
-                if (!is_game_paused)
+                if (enable_pause_detection && !is_game_paused)
                 {
                     spdlog::warn("Detected HUD toggle but game is not paused. Aborting.");
                     return;
@@ -157,17 +164,68 @@ void InitLogging()
     spdlog::flush_on(spdlog::level::debug);
 }
 
+void InitConfig()
+{
+    const auto game_path = std::filesystem::path(module_path).remove_filename();
+    const auto ini_path = game_path / (std::string(dll_name) + ".ini");
+    if (std::ifstream ini_stream(ini_path);
+        ini_stream.is_open())
+    {
+        inipp::Ini<char> ini;
+        ini.parse(ini_stream);
+        ini.strip_trailing_comments();
+
+        bool debug_logging = false;
+        inipp::get_value(ini.sections["Logging"], "Debug",  debug_logging);
+        if (debug_logging)
+        {
+            spdlog::set_level(spdlog::level::debug);
+            spdlog::default_logger()->set_level(spdlog::level::debug);
+            spdlog::debug("Debug logging enabled");
+        }
+
+        inipp::get_value(ini.sections["Screen Percentage"], "Default",  screen_percentage_default);
+        inipp::get_value(ini.sections["Screen Percentage"], "Photos",  screen_percentage_photos);
+        inipp::get_value(ini.sections["Screen Percentage"], "Delay",  screen_percentage_update_delay);
+        inipp::get_value(ini.sections["PhotoMode HUD Detection"], "Enabled",  enable_hud_detection);
+        inipp::get_value(ini.sections["Pause Detection"], "Enabled",  enable_pause_detection);
+        inipp::get_value(ini.sections["Pause Detection"], "RestoreScreenPercentage",  restore_screen_percentage_on_unfreeze);
+
+        spdlog::info("Loaded configuration file");
+        spdlog::info("Screen Percentage, Default: {}", screen_percentage_default);
+        spdlog::info("Screen Percentage, Photos: {}", screen_percentage_photos);
+        spdlog::info("Screen Percentage, Delay: {}", screen_percentage_update_delay);
+        spdlog::info("HUD Detection: {}", enable_hud_detection);
+        spdlog::info("Pause Detection: {}", enable_pause_detection);
+    }
+    else
+    {
+        spdlog::error("Failed to open config file! Please ensure it exists in: {:s}", ini_path.string());
+    }
+}
+
+
 DWORD WINAPI Main(void*)
 {
     InitLogging();
     spdlog::info("=== Patch Initialized ===");
+    InitConfig();
     spdlog::info("Module Path: {:s}", module_path.string());
     spdlog::info("Module Address: 0x{:X}", reinterpret_cast<uintptr_t>(exe_module));
 
-    HookTemporalAASamples();
-    HookGameFreeze();
-    HookGameUnfreeze();
-    HookPhotoModeHUDVisibility();
+    // HookTemporalAASamples(); // unused
+    if (enable_pause_detection)
+    {
+        spdlog::debug("Enabling Pause Detection");
+        HookGameFreeze();
+        HookGameUnfreeze();
+    }
+
+    if (enable_hud_detection)
+    {
+        spdlog::debug("Enabling HUD Detection");
+        HookPhotoModeHUDVisibility();
+    }
 
     if (screen_percentage_address = FindScreenPercentageAddress();
         screen_percentage_address == nullptr)
@@ -188,18 +246,19 @@ DWORD WINAPI HandleScreenPercentageUpdates(void*)
     using namespace std::literals::chrono_literals;
     while (true)
     {
-        std::unique_lock lock(queue_mutex);
         int value = 0;
-        if (!queue_screen_percentage_updates.empty())
         {
-            value = queue_screen_percentage_updates.front();
-            queue_screen_percentage_updates.pop();
+            std::unique_lock lock(queue_mutex);
+            if (!queue_screen_percentage_updates.empty())
+            {
+                value = queue_screen_percentage_updates.front();
+                queue_screen_percentage_updates.pop();
+            }
         }
         if (value > 0)
         {
             WriteScreenPercentageFixLag(screen_percentage_address, value, value <= screen_percentage_default ? screen_percentage_update_delay : 0);
         }
-
         std::this_thread::sleep_for(100ms);
     }
 
