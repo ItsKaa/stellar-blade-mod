@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "pattern.h"
 #include "screen_percentage.h"
+#include "dof.h"
 #include <string>
 #include <queue>
 #include <spdlog/spdlog.h>
@@ -98,6 +99,9 @@ void HookPhotoModeHUDVisibility()
 void HandlePhotoModeActivate()
 {
     is_photo_mode_enabled = false;
+
+    DOF::WriteDOFRecombine(0);
+    //DOF::WriteDOFMaxRadius(0.015); // example
 }
 
 void HandlePhotoModeDeactivate()
@@ -109,6 +113,9 @@ void HandlePhotoModeDeactivate()
         std::unique_lock lock(queue_mutex);
         queue_screen_percentage_updates.push(screen_percentage_default);
     }
+
+    DOF::WriteDOFRecombine(DOF::initial_dof_recombine);
+    DOF::WriteDOFMaxRadius(DOF::initial_dof_kernel_bg, DOF::initial_dof_kernel_fg);
 }
 
 void HookSelfieModeActivate()
@@ -248,6 +255,8 @@ DWORD WINAPI Main(void*)
     {
         ValidateScreenPercentage(screen_percentage_address);
     }
+
+    DOF::ScanDOFAddresses();
 
     spdlog::debug("Init done");
     return 1;
