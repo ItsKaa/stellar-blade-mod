@@ -21,12 +21,10 @@ std::queue<int> queue_screen_percentage_updates;
 std::mutex queue_mutex;
 
 bool enable_hud_detection = true;
-bool enable_pause_detection = true;
 
 int screen_percentage_update_delay = 2000;
 int screen_percentage_default = 100;
 int screen_percentage_photos = 200;
-bool is_game_paused = false;
 
 int key_percentage_photos = VK_F5;
 int key_percentage_default = VK_F6;
@@ -63,57 +61,6 @@ void HookTemporalAASamples()
     }
 }
 
-void HookGamePause()
-{
-    if (std::uint8_t* result = PatternScan(exe_module, "89 86 60 03 00 00 ?? ?? 64 03 00 00 ?? ?? 48 ?? ?? 58 03 00 00"))
-    {
-        spdlog::info("Found address for game pause: 0x{:X}", reinterpret_cast<uintptr_t>(result));
-        static SafetyHookMid midHook;
-        midHook = safetyhook::create_mid(result, [](safetyhook::Context& ctx) {
-            LogAllValues("game pause", ctx);
-
-            if (ctx.rax == 1
-                && ctx.r12 == 1 && ctx.r15 == 1)
-            {
-                spdlog::debug("Detected game pause.");
-                is_game_paused = true;
-            }
-        });
-    } else
-    {
-        spdlog::error("Failed to find address for game pause!");
-    }
-}
-
-void HookGameUnpause()
-{
-    if (std::uint8_t* result = PatternScan(exe_module, "44 29 76 08 48 83 C4 28 41 5E 5E C3"))
-    {
-        spdlog::info("Found address for game unpause: 0x{:X}", reinterpret_cast<uintptr_t>(result));
-        static SafetyHookMid midHook{};
-        midHook = safetyhook::create_mid(result, [](safetyhook::Context& ctx) {
-            LogAllValues("game unpause", ctx);
-
-            if (ctx.rax == 1
-                && ctx.rdx == 1 && ctx.r14 == 1 && ctx.r15 == 1
-                && ctx.rcx == 0 && ctx.rdi == 0 && ctx.r13 == 0)
-            {
-                spdlog::debug("Detected game unpause.");
-                is_game_paused = false;
-                if (enable_pause_detection)
-                {
-                    spdlog::info("Game unpaused, resetting screen percentage value to {:d}", screen_percentage_default);
-                    queue_screen_percentage_updates.push(screen_percentage_default);
-                }
-            }
-        });
-    }
-    else
-    {
-        spdlog::error("Failed to find the address for game unpause!");
-    }
-}
-
 void HookPhotoModeHUDVisibility()
 {
     if (std::uint8_t* result = PatternScan(exe_module, "0F 94 ?? 33 ?? 88 81 ?? ?? ?? ?? 48 ?? ?? C7"))
@@ -125,13 +72,6 @@ void HookPhotoModeHUDVisibility()
                 const auto hud_visible = ctx.rdx == 1;
                 spdlog::debug("Found HUD toggle {:s}", hud_visible ? "true" : "false");
                 LogAllValues("HUD Visibility", ctx);
-
-                // Selfie mode does not pause the game.
-                // if (enable_pause_detection && !is_game_paused)
-                // {
-                //     spdlog::debug("Detected HUD toggle but game is not paused.. Aborting");
-                //     return;
-                // }
 
                 std::unique_lock lock(queue_mutex);
                 if (hud_visible)
@@ -193,7 +133,6 @@ void InitConfig()
         inipp::get_value(ini.sections["Screen Percentage"], "Photos",  screen_percentage_photos);
         inipp::get_value(ini.sections["Screen Percentage"], "Delay",  screen_percentage_update_delay);
         inipp::get_value(ini.sections["PhotoMode HUD Detection"], "Enabled",  enable_hud_detection);
-        inipp::get_value(ini.sections["Pause Detection"], "Enabled",  enable_pause_detection);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Default",  key_percentage_default);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_Photos",  key_percentage_photos);
         inipp::get_value(ini.sections["Keys"], "ScreenPercentage_LowQuality",  key_percentage_low_quality);
@@ -203,7 +142,6 @@ void InitConfig()
         spdlog::info("Screen Percentage, Photos: {}", screen_percentage_photos);
         spdlog::info("Screen Percentage, Delay: {}", screen_percentage_update_delay);
         spdlog::info("HUD Detection: {}", enable_hud_detection);
-        spdlog::info("Pause Detection: {}", enable_pause_detection);
         spdlog::info("Key: ScreenPercentage Default: {}", key_percentage_default);
         spdlog::info("Key: ScreenPercentage Photos: {}", key_percentage_photos);
         spdlog::info("Key: ScreenPercentage Low Quality: {}", key_percentage_low_quality);
@@ -224,13 +162,7 @@ DWORD WINAPI Main(void*)
     spdlog::info("Module Address: 0x{:X}", reinterpret_cast<uintptr_t>(exe_module));
 
     // HookTemporalAASamples(); // unused
-    if (enable_pause_detection)
-    {
-        spdlog::debug("Enabling Pause Detection");
-        HookGamePause();
-        HookGameUnpause();
-    }
-
+    
     if (enable_hud_detection)
     {
         spdlog::debug("Enabling HUD Detection");
