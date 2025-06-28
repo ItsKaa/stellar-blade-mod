@@ -20,6 +20,8 @@ std::uint8_t* screen_percentage_address = nullptr;
 std::queue<int> queue_screen_percentage_updates;
 std::mutex queue_mutex;
 
+bool is_photo_mode_enabled = false;
+bool enable_screen_percentage_reset_on_close = true;
 bool enable_hud_detection = true;
 
 int screen_percentage_update_delay = 2000;
@@ -90,6 +92,70 @@ void HookPhotoModeHUDVisibility()
     else
     {
         spdlog::error("Failed to find address for HUD Visibility!");
+    }
+}
+
+void HandlePhotoModeActivate()
+{
+    is_photo_mode_enabled = false;
+}
+
+void HandlePhotoModeDeactivate()
+{
+    is_photo_mode_enabled = false;
+    if (enable_screen_percentage_reset_on_close)
+    {
+        spdlog::info("Photo mode deactivated, resetting screen percentage value to {:d}", screen_percentage_default);
+        std::unique_lock lock(queue_mutex);
+        queue_screen_percentage_updates.push(screen_percentage_default);
+    }
+}
+
+void HookSelfieModeActivate()
+{
+    if (std::uint8_t* result = PatternScan(exe_module, "E9 ?? ?? ?? ?? 83 F8 03 0F 85 ?? ?? ?? ?? E8 ?? ?? ?? ?? 41 B1 01"))
+    {
+        spdlog::info("Found address for SelfieModeActivate: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        static SafetyHookMid hook = safetyhook::create_mid(result, [](safetyhook::Context& ctx) {
+            LogAllValues("SelfieModeActivate", ctx);
+            HandlePhotoModeActivate();
+        });
+    }
+    else
+    {
+        spdlog::error("Failed to find address for SelfieModeActivate!");
+    }
+}
+
+void HookPhotoModeActivate()
+{
+    if (std::uint8_t* result = PatternScan(exe_module, "E8 ?? ?? ?? ?? 48 8B D8 89 68 08 ?? ??"))
+    {
+		spdlog::info("Found address for PhotoModeActivate: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        static SafetyHookMid hook = safetyhook::create_mid(result + 0x8, [](safetyhook::Context& ctx) {
+			LogAllValues("PhotoModeActivate", ctx);
+            HandlePhotoModeActivate();
+        });
+    }
+    else
+    {
+        spdlog::error("Failed to find address for PhotoModeActivate!");
+    }
+}
+
+void HookPhotoModeDeactivate()
+{
+    if (std::uint8_t* result = PatternScan(exe_module, "E8 ?? ?? ?? ?? 48 8B F0 88 58 08 E8 ?? ?? ?? ?? 48 83 78 ?? ?? 74 2E"))
+    {
+        spdlog::info("Found address for PhotoModeDeactivate: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+        static SafetyHookMid hook = safetyhook::create_mid(result + 0x8, [](safetyhook::Context& ctx) {
+            LogAllValues("PhotoModeDeactivate", ctx);
+            HandlePhotoModeDeactivate();
+        });
+    }
+    else
+    {
+        spdlog::error("Failed to find address for PhotoModeDeactivate!");
     }
 }
 
@@ -168,6 +234,10 @@ DWORD WINAPI Main(void*)
         spdlog::debug("Enabling HUD Detection");
         HookPhotoModeHUDVisibility();
     }
+
+    HookSelfieModeActivate();
+    HookPhotoModeActivate();
+    HookPhotoModeDeactivate();
 
     if (screen_percentage_address = FindScreenPercentageAddress();
         screen_percentage_address == nullptr)
