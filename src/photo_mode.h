@@ -9,28 +9,19 @@
 
 namespace PhotoMode
 {
-    static void HookPhotoModeHUDVisibility()
+    static void HookPhotoModeHUDVisibility(std::function<void(bool)>&& fn)
     {
         if (std::uint8_t* result = PatternScan(exe_module, "0F 94 ?? 33 ?? 88 81 ?? ?? ?? ?? 48 ?? ?? C7"))
         {
             spdlog::info("Found address for PhotoMode HUD Visibility: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+            static std::function<void(bool)> callback = [fn](bool visible) { fn(visible); };
             static SafetyHookMid hook = safetyhook::create_mid(result + 0x05, [](safetyhook::Context& ctx) {
                 if ((ctx.rdx == 1 || ctx.rdx == 0) && ctx.rbx == 0)
                 {
                     const auto hud_visible = ctx.rdx == 1;
                     spdlog::debug("Found HUD toggle {:s}", hud_visible ? "true" : "false");
                     LogAllValues("HUD Visibility", ctx);
-
-                    std::unique_lock lock(queue_mutex);
-                    if (hud_visible)
-                    {
-                        spdlog::info("HUD visible, resetting screen percentage value to {:d}", screen_percentage_default);
-                        queue_screen_percentage_updates.push(screen_percentage_default);
-                    } else
-                    {
-                        spdlog::info("HUD hidden, updating screen percentage value to {:d}", screen_percentage_photos);
-                        queue_screen_percentage_updates.push(screen_percentage_photos);
-                    }
+                    callback(hud_visible);
                 }
             });
         } else
@@ -40,7 +31,6 @@ namespace PhotoMode
     }
 
     static void HookSelfieModeActivate(std::function<void()>&& fn)
-    //static void HookSelfieModeActivate()
     {
         if (std::uint8_t* result = PatternScan(exe_module, "E9 ?? ?? ?? ?? 83 F8 03 0F 85 ?? ?? ?? ?? E8 ?? ?? ?? ?? 41 B1 01"))
         {

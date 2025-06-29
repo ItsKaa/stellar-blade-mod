@@ -51,11 +51,10 @@ namespace DOF
             );
             initial_dof_recombine = *result;
             return result;
-        } else
-        {
-            spdlog::error("Failed to find address for DOF.Recombine.Quality!");
-            return {};
         }
+
+        spdlog::error("Failed to find address for DOF.Recombine.Quality!");
+        return {};
     }
 
     static void ScanDOFAddresses()
@@ -71,18 +70,22 @@ namespace DOF
     {
         if (address_dof_kernel_bg != nullptr)
         {
+            spdlog::debug("Writing DOF max background radius: {}", background);
             WritePattern(address_dof_kernel_bg, reinterpret_cast<std::uint8_t*>(&background), 4);
             WritePattern(address_dof_kernel_bg + 0x04, reinterpret_cast<std::uint8_t*>(&background), 4);
-        } else
+        }
+        else
         {
             spdlog::warn("Did not write DOF.Kernel.MaxBackgroundRadius because the address is invalid");
         }
 
         if (address_dof_kernel_fg)
         {
+            spdlog::debug("Writing DOF max foreground radius: {}", foreground);
             WritePattern(address_dof_kernel_fg, reinterpret_cast<std::uint8_t*>(&foreground), 4);
             WritePattern(address_dof_kernel_fg + 0x04, reinterpret_cast<std::uint8_t*>(&foreground), 4);
-        } else
+        }
+        else
         {
             spdlog::warn("Did not write DOF.Kernel.MaxForegroundRadius because the address is invalid");
         }
@@ -95,11 +98,13 @@ namespace DOF
 
     static void WriteDOFRecombine(std::uint8_t value)
     {
+        spdlog::debug("Writing DOF recombine: {}", value);
         if (address_dof_recombine)
         {
             WritePattern(address_dof_recombine, &value, 1);
-            WritePattern(address_dof_recombine + 0x04, &value, 1);
-        } else
+            WritePattern(address_dof_recombine - 0x04, &value, 1);
+        }
+        else
         {
             spdlog::warn("Did not write DOF.Recombine because the address is invalid");
         }

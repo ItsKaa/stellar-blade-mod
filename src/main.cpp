@@ -7,26 +7,66 @@
 #include "screen_percentage.h"
 #include <spdlog/spdlog.h>
 
+using namespace std::literals::chrono_literals;
+
+static void ActivatePreset(const ConfigPreset& preset, bool queue_screen_percentage = true)
+{
+    if (enable_edit_dof)
+    {
+        DOF::WriteDOFRecombine(preset.dof_recombine == -1 ? DOF::initial_dof_recombine : preset.dof_recombine);
+        DOF::WriteDOFMaxRadius(
+            std::isnan(preset.dof_max_background_radius) ? DOF::initial_dof_kernel_bg : preset.dof_max_background_radius,
+            std::isnan(preset.dof_max_foreground_radius) ? DOF::initial_dof_kernel_fg : preset.dof_max_foreground_radius
+        );
+    }
+
+    if (enable_edit_screen_percentage)
+    {
+        if (queue_screen_percentage)
+        {
+            std::unique_lock lock(queue_mutex);
+            queue_screen_percentage_updates.push(preset.screen_percentage);
+        }
+        else
+        {
+            const auto delay = preset.type == PresetType::PhotoMode || preset.screen_percentage <= 40 ? 0 : screen_percentage_update_delay;
+            WriteScreenPercentageFixLag(screen_percentage_address, preset.screen_percentage, delay);
+        }
+    }
+}
+
+static void HandlePhotoModeUIVisibility(bool visible)
+{
+    if (!enable_hud_detection)
+    {
+        return;
+    }
+
+    if (visible)
+    {
+        spdlog::info("HUD visible, activating default preset.");
+        ActivatePreset(config_preset_default);
+    }
+    else
+    {
+        spdlog::info("HUD hidden, activating photos preset");
+        ActivatePreset(config_preset_photos);
+    }
+}
+
 static void HandlePhotoModeActivate()
 {
     is_photo_mode_enabled = false;
-
-    DOF::WriteDOFRecombine(0);
-    //DOF::WriteDOFMaxRadius(0.015); // example
 }
 
 static void HandlePhotoModeDeactivate()
 {
     is_photo_mode_enabled = false;
-    if (enable_screen_percentage_reset_on_close)
+    if (enable_reset_to_default)
     {
-        spdlog::info("Photo mode deactivated, resetting screen percentage value to {:d}", screen_percentage_default);
-        std::unique_lock lock(queue_mutex);
-        queue_screen_percentage_updates.push(screen_percentage_default);
+        spdlog::info("Photo mode deactivated, loading default preset.");
+        ActivatePreset(config_preset_default);
     }
-
-    DOF::WriteDOFRecombine(DOF::initial_dof_recombine);
-    DOF::WriteDOFMaxRadius(DOF::initial_dof_kernel_bg, DOF::initial_dof_kernel_fg);
 }
 
 DWORD WINAPI HandleScreenPercentageUpdates(void*)
@@ -44,9 +84,9 @@ DWORD WINAPI HandleScreenPercentageUpdates(void*)
                 queue_screen_percentage_updates.pop();
             }
         }
-        if (value > 0)
+        if (enable_edit_screen_percentage && value > 0)
         {
-            WriteScreenPercentageFixLag(screen_percentage_address, value, value <= screen_percentage_default ? screen_percentage_update_delay : 0);
+            WriteScreenPercentageFixLag(screen_percentage_address, value, value <= config_preset_default.screen_percentage ? screen_percentage_update_delay : 0);
         }
 
         // Handle key inputs in here as well for now, since they're all related to screen percentage.
@@ -56,23 +96,14 @@ DWORD WINAPI HandleScreenPercentageUpdates(void*)
 
         if (!shift && !ctrl && !alt)
         {
-            if (::GetAsyncKeyState(key_percentage_photos) & 0x8000)
+            for (const auto& preset : config_presets)
             {
-                spdlog::info("Key pressed, updating screen percentage to photo mode: {:d}", screen_percentage_photos);
-                WriteScreenPercentage(screen_percentage_address, screen_percentage_photos);
-                Sleep(200);
-            }
-            else if (::GetAsyncKeyState(key_percentage_default) & 0x8000)
-            {
-                spdlog::info("Key pressed, updating screen percentage to default: {:d}", screen_percentage_photos);
-                WriteScreenPercentageFixLag(screen_percentage_address, screen_percentage_default, screen_percentage_update_delay);
-                Sleep(200);
-            }
-            else if (::GetAsyncKeyState(key_percentage_low_quality) & 0x8000)
-            {
-                spdlog::info("Key pressed, updating screen percentage to low quality: {:d}", screen_percentage_photos);
-                WriteScreenPercentage(screen_percentage_address, 32);
-                Sleep(200);
+                if (::GetAsyncKeyState(preset.hotkey) & 0x8000)
+                {
+                    spdlog::info("Preset {} key pressed, activating", preset.name);
+                    ActivatePreset(preset, false);
+                    std::this_thread::sleep_for(200ms);
+                }
             }
         }
         std::this_thread::sleep_for(100ms);
@@ -89,20 +120,19 @@ DWORD WINAPI Main(void*)
     spdlog::info("Module Path: {:s}", module_path.string());
     spdlog::info("Module Address: 0x{:X}", reinterpret_cast<uintptr_t>(exe_module));
 
-    if (enable_hud_detection)
-    {
-        spdlog::debug("Enabling HUD Detection");
-        PhotoMode::HookPhotoModeHUDVisibility();
-    }
-
+    PhotoMode::HookPhotoModeHUDVisibility(&HandlePhotoModeUIVisibility);
     PhotoMode::HookSelfieModeActivate(&HandlePhotoModeActivate);
     PhotoMode::HookPhotoModeActivate(&HandlePhotoModeActivate);
     PhotoMode::HookPhotoModeDeactivate(&HandlePhotoModeDeactivate);
+
+    // Wait a bit for the heap-space scans.
+    std::this_thread::sleep_for(5s);
 
     if (screen_percentage_address = FindScreenPercentageAddress();
         screen_percentage_address == nullptr)
     {
         spdlog::error("Unable to find the screen percentage address. Disabled the screen percentage functionality.");
+        enable_edit_screen_percentage = false;
     }
     else
     {
@@ -136,6 +166,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
         case DLL_THREAD_ATTACH:
         case DLL_THREAD_DETACH:
         case DLL_PROCESS_DETACH:
+            break;
         default:
             break;
     }
