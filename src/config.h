@@ -98,10 +98,10 @@ static void InitConfig(bool reloading = false)
         inipp::get_value(ini.sections["General"], "EnableReload",  enable_reload_config);
         inipp::get_value(ini.sections["General"], "ReloadCheckDelay",  reload_check_delay_seconds);
         inipp::get_value(ini.sections["General"], "ReloadReactivatesPreset",  reload_reactivates_preset);
+        inipp::get_value(ini.sections["General"], "AutoSwapToDefaultPreset",  enable_reset_to_default);
         inipp::get_value(ini.sections["Screen Percentage"], "Enabled",  enable_edit_screen_percentage);
         inipp::get_value(ini.sections["Screen Percentage"], "Delay",  screen_percentage_update_delay);
         inipp::get_value(ini.sections["Depth of Field"], "Enabled",  enable_edit_dof);
-        inipp::get_value(ini.sections["Presets.Default"], "AutoSwapToDefaultPreset",  enable_reset_to_default);
         inipp::get_value(ini.sections["PhotoMode HUD Detection"], "Enabled",  enable_hud_detection);
 
         config_presets.clear();
