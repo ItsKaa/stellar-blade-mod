@@ -49,11 +49,15 @@ static ConfigPreset GetConfigPreset(PresetType type)
     return {};
 }
 
+static std::filesystem::path GetIniPath()
+{
+    const auto game_path = std::filesystem::path(module_path).remove_filename();
+    return game_path / (std::string(dll_name) + ".ini");
+}
 
 static void InitConfig()
 {
-    const auto game_path = std::filesystem::path(module_path).remove_filename();
-    const auto ini_path = game_path / (std::string(dll_name) + ".ini");
+    const auto ini_path = GetIniPath();
     if (std::ifstream ini_stream(ini_path);
         ini_stream.is_open())
     {

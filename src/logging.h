@@ -4,16 +4,17 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
+static std::filesystem::path GetLogPath()
+{
+    const auto game_path = std::filesystem::path(module_path).remove_filename();
+    return game_path / (dll_name + ".log");
+}
+
 static void InitLogging()
 {
-    WCHAR buffer[MAX_PATH];
-    GetModuleFileNameW(exe_module, buffer, MAX_PATH);
-    module_path = std::filesystem::path(buffer);
-    const auto game_path = std::filesystem::path(module_path).remove_filename();
-
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("",
                                                                 std::make_shared<spdlog::sinks::rotating_file_sink_st>(
-                                                                    game_path.native() + std::wstring(dll_name.begin(), dll_name.end()) + L".log",
+                                                                    GetLogPath(),
                                                                     10 * 1024 * 1024, // 10MiB
                                                                     1
                                                                 )));
@@ -27,8 +28,8 @@ static void LogStartupMessage()
 
 static void TruncateLogFile()
 {
-    const auto game_path = std::filesystem::path(module_path).remove_filename();
-    if (const auto log_path = game_path / (dll_name + ".log"); std::filesystem::exists(log_path))
+    if (const auto log_path = GetLogPath();
+        std::filesystem::exists(log_path))
     {
         std::filesystem::resize_file(log_path, 0);
     }

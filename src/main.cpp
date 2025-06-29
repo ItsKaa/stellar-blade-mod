@@ -114,6 +114,10 @@ DWORD WINAPI UpdatesBackgroundThread(void*)
 
 DWORD WINAPI Main(void*)
 {
+    WCHAR buffer[MAX_PATH];
+    GetModuleFileNameW(exe_module, buffer, MAX_PATH);
+    module_path = std::filesystem::path(buffer);
+
     InitLogging();
     LogStartupMessage();
     InitConfig();
