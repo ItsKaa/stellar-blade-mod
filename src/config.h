@@ -49,13 +49,23 @@ static ConfigPreset GetConfigPreset(PresetType type)
     return {};
 }
 
+static ConfigPreset GetConfigPresetByName(const std::string& name)
+{
+    if (const auto it = std::ranges::find_if(config_presets, [&name](const ConfigPreset& preset) { return preset.name == name; });
+        it != config_presets.end())
+    {
+        return *it;
+    }
+    return {};
+}
+
 static std::filesystem::path GetIniPath()
 {
     const auto game_path = std::filesystem::path(module_path).remove_filename();
     return game_path / (std::string(dll_name) + ".ini");
 }
 
-static void InitConfig()
+static void InitConfig(bool reloading = false)
 {
     const auto ini_path = GetIniPath();
     if (std::ifstream ini_stream(ini_path);
@@ -65,30 +75,36 @@ static void InitConfig()
         ini.parse(ini_stream);
         ini.strip_trailing_comments();
 
-        bool clear_log = false;
-        inipp::get_value(ini.sections["Logging"], "Truncate",  clear_log);
-        if (clear_log)
+        if (!reloading)
         {
-            TruncateLogFile();
-            LogStartupMessage();
-            spdlog::info("Wiped log started");
+            bool clear_log = false;
+            inipp::get_value(ini.sections["Logging"], "Truncate",  clear_log);
+            if (clear_log)
+            {
+                TruncateLogFile();
+                LogStartupMessage();
+                spdlog::info("Wiped log started");
+            }
         }
 
         bool debug_logging = false;
         inipp::get_value(ini.sections["Logging"], "Debug",  debug_logging);
-        if (debug_logging)
+        spdlog::set_level(debug_logging ? spdlog::level::debug : spdlog::level::info);
+        if (!reloading)
         {
-            spdlog::set_level(spdlog::level::debug);
-            spdlog::default_logger()->set_level(spdlog::level::debug);
             spdlog::debug("Debug logging enabled");
         }
 
+        inipp::get_value(ini.sections["General"], "EnableReload",  enable_reload_config);
+        inipp::get_value(ini.sections["General"], "ReloadCheckDelay",  reload_check_delay_seconds);
+        inipp::get_value(ini.sections["General"], "ReloadReactivatesPreset",  reload_reactivates_preset);
         inipp::get_value(ini.sections["Screen Percentage"], "Enabled",  enable_edit_screen_percentage);
         inipp::get_value(ini.sections["Screen Percentage"], "Delay",  screen_percentage_update_delay);
         inipp::get_value(ini.sections["Depth of Field"], "Enabled",  enable_edit_dof);
         inipp::get_value(ini.sections["Presets.Default"], "AutoSwapToDefaultPreset",  enable_reset_to_default);
         inipp::get_value(ini.sections["PhotoMode HUD Detection"], "Enabled",  enable_hud_detection);
 
+        config_presets.clear();
         ReadPreset(ini, "Default", PresetType::Default);
         ReadPreset(ini, "Photos", PresetType::PhotoMode);
         for (int i = 1; i < 100; ++i)
@@ -120,4 +136,55 @@ static void InitConfig()
     {
         spdlog::error("Failed to open config file! Please ensure it exists in: {:s}", ini_path.string());
     }
+}
+
+static bool ReloadConfigIfNeeded()
+{
+    if (!enable_reload_config)
+    {
+        return false;
+    }
+
+    const auto clock = std::chrono::system_clock::now();
+    if (config_last_check == std::chrono::time_point<std::chrono::system_clock>{})
+    {
+        // wait for the next cycle.
+        config_last_check = clock;
+        return false;
+    }
+
+    if (const auto check_diff = clock - config_last_check;
+        check_diff <= std::chrono::seconds(reload_check_delay_seconds))
+    {
+        return false;
+    }
+
+    config_last_check = clock;
+    if (const auto ini_path = GetIniPath();
+        std::filesystem::exists(ini_path))
+    {
+        const auto mtime = std::filesystem::last_write_time(ini_path);
+        if (config_last_modification_date == std::filesystem::file_time_type{})
+        {
+            // wait for the next cycle.
+            config_last_modification_date = mtime;
+            return false;
+        }
+
+        if (const auto sec = std::chrono::duration_cast<std::chrono::seconds>(mtime - config_last_modification_date);
+            sec >= std::chrono::seconds(1)) // just to be sure.
+        {
+            std::stringstream ss;
+            ss << mtime;
+            spdlog::info("Changes detected, reloading config... (mtime: {})", ss.str());
+            config_last_modification_date = mtime;
+            InitConfig(true);
+            return true;
+        }
+    }
+    else
+    {
+        spdlog::debug("Failed to read config file");
+    }
+    return false;
 }

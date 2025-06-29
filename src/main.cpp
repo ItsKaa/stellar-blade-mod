@@ -11,6 +11,7 @@ using namespace std::literals::chrono_literals;
 
 static void ActivatePreset(const ConfigPreset& preset, bool queue_screen_percentage = true)
 {
+    current_preset_name = preset.name;
     if (enable_edit_dof)
     {
         DOF::WriteDOFRecombine(preset.dof_recombine == -1 ? DOF::initial_dof_recombine : preset.dof_recombine);
@@ -75,6 +76,7 @@ DWORD WINAPI UpdatesBackgroundThread(void*)
     using namespace std::literals::chrono_literals;
     while (true)
     {
+        // Screen percentage updates
         int value = 0;
         {
             std::unique_lock lock(queue_mutex);
@@ -89,7 +91,7 @@ DWORD WINAPI UpdatesBackgroundThread(void*)
             WriteScreenPercentageFixLag(screen_percentage_address, value, value <= config_preset_default.screen_percentage ? screen_percentage_update_delay : 0);
         }
 
-        // Handle key inputs in here as well for now, since they're all related to screen percentage.
+        // Key inputs
         shift = GetAsyncKeyState(VK_SHIFT) & 0x8000 ? true : false;
         ctrl = GetAsyncKeyState(VK_CONTROL) & 0x8000 ? true : false;
         alt = GetAsyncKeyState(VK_MENU) & 0x8000 ? true : false;
@@ -106,6 +108,20 @@ DWORD WINAPI UpdatesBackgroundThread(void*)
                 }
             }
         }
+
+        // Reload config file:
+        if (ReloadConfigIfNeeded() && reload_reactivates_preset)
+        {
+            auto preset = GetConfigPresetByName(current_preset_name);
+            if (preset.type == PresetType::Unknown)
+            {
+                spdlog::info("Preset with name {} could not be found, resetting to the default preset.", preset.name);
+                preset = config_preset_default;
+            }
+            spdlog::info("Config reloaded, activating preset {:s}", preset.name);
+            ActivatePreset(preset, false);
+        }
+
         std::this_thread::sleep_for(100ms);
     }
 
