@@ -1,5 +1,6 @@
 #pragma once
 #include "globals.h"
+#include "logging.h"
 #include <filesystem>
 #include <fstream>
 #include <inipp.h>
@@ -59,6 +60,15 @@ static void InitConfig()
         inipp::Ini<char> ini;
         ini.parse(ini_stream);
         ini.strip_trailing_comments();
+
+        bool clear_log = false;
+        inipp::get_value(ini.sections["Logging"], "Truncate",  clear_log);
+        if (clear_log)
+        {
+            TruncateLogFile();
+            LogStartupMessage();
+            spdlog::info("Wiped log started");
+        }
 
         bool debug_logging = false;
         inipp::get_value(ini.sections["Logging"], "Debug",  debug_logging);

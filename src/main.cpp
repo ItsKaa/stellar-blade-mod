@@ -115,7 +115,7 @@ DWORD WINAPI HandleScreenPercentageUpdates(void*)
 DWORD WINAPI Main(void*)
 {
     InitLogging();
-    spdlog::info("=== Patch Initialized ===");
+    LogStartupMessage();
     InitConfig();
     spdlog::info("Module Path: {:s}", module_path.string());
     spdlog::info("Module Address: 0x{:X}", reinterpret_cast<uintptr_t>(exe_module));
