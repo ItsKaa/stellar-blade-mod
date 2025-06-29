@@ -11,42 +11,32 @@ namespace DOF
     static float initial_dof_kernel_bg = 0;
     static std::uint8_t initial_dof_recombine = 0;
 
-    static std::uint8_t* FindDOFKernelMaxBackgroundRadiusAddress()
+    // first: foreground, second: background
+    static std::tuple<std::uint8_t*,std::uint8_t*> FindDOFKernelMaxRadiusAddresses()
     {
-        if (std::uint8_t* result = PatternScanHeap("72 00 2E 00 44 00 4F 00 46 00 2E 00 4B 00 65 00 72 00 6E 00 65 00 6C 00 2E 00 4D 00 61 00 78 00 42 00 61 00 63 00 6B 00 67 00 72 00 6F 00 75 00 6E 00 64 00 52 00 61 00 64 00 69 00 75 00 73 00"))
+        if (std::uint8_t* result = PatternScanHeap("72 00 2E 00 44 00 4F 00 46 00 2E 00 4B 00 65 00 72 00 6E 00 65 00 6C 00 2E 00 4D 00 61 00 78 00 46 00 6F 00 72 00 65 00 67 00 72 00 6F 00 75 00 6E 00 64 00 52 00 61 00 64 00 69 00 75 00 73 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 72 00 2E 00 44 00 4F 00 46 00 2E 00 4B 00 65 00 72 00 6E 00 65 00 6C 00 2E 00 4D 00 61 00 78 00 42 00 61 00 63 00 6B 00 67 00 72 00 6F 00 75 00 6E 00 64 00 52 00 61 00 64 00 69 00 75 00 73 00"))
         {
-            spdlog::info("Found address for DOF.Kernel.MaxBackgroundRadius: 0x{:X}", reinterpret_cast<uintptr_t>(result));
-            spdlog::debug("DOF.Kernel.MaxBackgroundRadius values: {} & {}",
-                          *reinterpret_cast<float*>(result - 0x04),
-                          *reinterpret_cast<float*>(result - 0x08)
-            );
-            result -= 0x08;
-            initial_dof_kernel_bg = *reinterpret_cast<float*>(result);
-            return result;
-        } else
-        {
-            spdlog::error("Failed to find address for DOF.Kernel.MaxBackgroundRadius!");
-            return {};
-        }
-    }
-
-    static std::uint8_t* FindDOFKernelMaxForegroundRadiusAddress()
-    {
-        if (std::uint8_t* result = PatternScanHeap("72 00 2E 00 44 00 4F 00 46 00 2E 00 4B 00 65 00 72 00 6E 00 65 00 6C 00 2E 00 4D 00 61 00 78 00 46 00 6F 00 72 00 65 00 67 00 72 00 6F 00 75 00 6E 00 64 00 52 00 61 00 64 00 69 00 75 00 73 00"))
-        {
-            spdlog::info("Found address for DOF.Kernel.MaxForegroundRadius: 0x{:X}", reinterpret_cast<uintptr_t>(result));
+            auto foreground = result - 0x08;
+            spdlog::info("Found address for DOF.Kernel.MaxForegroundRadius: 0x{:X}", reinterpret_cast<uintptr_t>(foreground));
             spdlog::debug("DOF.Kernel.MaxForegroundRadius values: {} & {}",
-                          *reinterpret_cast<float*>(result - 0x04),
-                          *reinterpret_cast<float*>(result - 0x08)
+                          *reinterpret_cast<float*>(foreground),
+                          *reinterpret_cast<float*>(foreground + 0x04)
             );
-            result -= 0x08;
-            initial_dof_kernel_fg = *reinterpret_cast<float*>(result);
-            return result;
-        } else
-        {
-            spdlog::error("Failed to find address for DOF.Kernel.MaxForegroundRadius!");
-            return {};
+            initial_dof_kernel_fg = *reinterpret_cast<float*>(foreground);
+
+            auto background = result + 0xA0 - 0x08;
+            spdlog::info("Found address for DOF.Kernel.MaxBackgroundRadius: 0x{:X}", reinterpret_cast<uintptr_t>(background));
+            spdlog::debug("DOF.Kernel.MaxBackgroundRadius values: {} & {}",
+                          *reinterpret_cast<float*>(background),
+                          *reinterpret_cast<float*>(background + 0x04)
+            );
+            initial_dof_kernel_bg = *reinterpret_cast<float*>(background);
+
+            return std::make_tuple(foreground, background);
         }
+
+        spdlog::error("Failed to find address for DOF.MaxRadius (Foreground & Background)!");
+        return {};
     }
 
     static std::uint8_t* FindDOFRecombineQuality()
@@ -70,9 +60,11 @@ namespace DOF
 
     static void ScanDOFAddresses()
     {
-        address_dof_kernel_bg = FindDOFKernelMaxBackgroundRadiusAddress();
-        address_dof_kernel_fg = FindDOFKernelMaxForegroundRadiusAddress();
         address_dof_recombine = FindDOFRecombineQuality();
+
+        const auto max_radius = FindDOFKernelMaxRadiusAddresses();
+        address_dof_kernel_bg = std::get<0>(max_radius);
+        address_dof_kernel_fg = std::get<1>(max_radius);
     }
 
     static void WriteDOFMaxRadius(float background, float foreground)
