@@ -69,7 +69,7 @@ static void HandlePhotoModeDeactivate()
     }
 }
 
-DWORD WINAPI HandleScreenPercentageUpdates(void*)
+DWORD WINAPI UpdatesBackgroundThread(void*)
 {
     bool shift = false, ctrl = false, alt = false;
     using namespace std::literals::chrono_literals;
@@ -157,7 +157,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
                 SetThreadPriority(main_thread, THREAD_PRIORITY_HIGHEST);
                 CloseHandle(main_thread);
             }
-            if (auto thread = CreateThread(nullptr, 0, HandleScreenPercentageUpdates, nullptr, 0, nullptr))
+            if (auto thread = CreateThread(nullptr, 0, UpdatesBackgroundThread, nullptr, 0, nullptr))
             {
                 CloseHandle(thread);
             }
